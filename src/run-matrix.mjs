@@ -14,7 +14,7 @@ const GRANULARITY_MODES = [
   { granularity: WEEK_GRANULARITY, label: "1 week" }
 ];
 
-const LONG_PRESS_MS = 800;
+const LONG_PRESS_MS = 500;
 
 function readFlag(name) {
   return process.argv.includes(name);
@@ -89,12 +89,11 @@ async function main() {
 
       if (event?.direction === "middle") {
         if (event.action === "pressed") {
-          middlePressedAt = Date.now();
-        } else if (event.action === "released" && middlePressedAt !== null) {
-          const elapsed = Date.now() - middlePressedAt;
-          middlePressedAt = null;
-
+          middlePressedAt = event.timestamp;
+        } else if (event.action === "held" && middlePressedAt !== null) {
+          const elapsed = (event.timestamp - middlePressedAt) * 1000;
           if (elapsed >= LONG_PRESS_MS) {
+            middlePressedAt = null;
             modeIndex = (modeIndex + 1) % GRANULARITY_MODES.length;
             currentMode = GRANULARITY_MODES[modeIndex];
             console.log(`Switched to interval: ${currentMode.label}`);
@@ -105,11 +104,14 @@ async function main() {
             });
             nextRefreshAt = Date.now() + refreshMinutes * 60_000;
             console.table(matrixToConsoleTable(matrix));
-          } else {
+          }
+        } else if (event.action === "released") {
+          if (middlePressedAt !== null) {
+            middlePressedAt = null;
             await showMessage(piUrl, buildSelectionLabel(matrix, selectedIndex));
           }
+          // if middlePressedAt is null, long-press already fired — ignore release
         }
-        // ignore "held" events for middle button
       } else if (event && event.action !== "released") {
         const row = Math.floor(selectedIndex / 8);
         const column = selectedIndex % 8;

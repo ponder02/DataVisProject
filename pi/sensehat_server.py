@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock
@@ -55,7 +56,7 @@ def push_event(event):
     payload = {
         "direction": event.direction,
         "action": event.action,
-        "timestamp": getattr(event, "timestamp", None),
+        "timestamp": getattr(event, "timestamp", None) or time.time(),
     }
     with queue_lock:
         event_queue.append(payload)
