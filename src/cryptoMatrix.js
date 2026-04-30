@@ -17,6 +17,23 @@ export const SHORT_LABELS = Object.fromEntries(
   DEFAULT_PRODUCTS.map((product) => [product, product.split("-")[0]])
 );
 
+export const WEEK_GRANULARITY = "week";
+
+function resampleToWeekly(candles) {
+  const weekMap = new Map();
+  for (const candle of candles) {
+    const date = new Date(candle.timestamp);
+    const daysToMonday = (date.getUTCDay() + 6) % 7;
+    const monday = new Date(date);
+    monday.setUTCDate(date.getUTCDate() - daysToMonday);
+    monday.setUTCHours(0, 0, 0, 0);
+    weekMap.set(monday.toISOString(), candle.close);
+  }
+  return Array.from(weekMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([timestamp, close]) => ({ product: candles[0]?.product, timestamp, close }));
+}
+
 export async function loadCoinbaseCandles(product, granularity = 3600) {
   const url = new URL(`https://api.exchange.coinbase.com/products/${product}/candles`);
   url.searchParams.set("granularity", String(granularity));
@@ -103,12 +120,18 @@ export async function computeCorrelationMatrix({
   products = DEFAULT_PRODUCTS,
   granularity = 3600
 } = {}) {
+  const fetchGranularity = granularity === WEEK_GRANULARITY ? 86400 : granularity;
   const candlesByProduct = await Promise.all(
-    products.map((product) => loadCoinbaseCandles(product, granularity))
+    products.map((product) => loadCoinbaseCandles(product, fetchGranularity))
   );
 
+  const processedByProduct =
+    granularity === WEEK_GRANULARITY
+      ? candlesByProduct.map(resampleToWeekly)
+      : candlesByProduct;
+
   const returnsByProduct = new Map(
-    candlesByProduct.map((candles) => [candles[0]?.product, seriesToReturns(candles)])
+    processedByProduct.map((candles) => [candles[0]?.product, seriesToReturns(candles)])
   );
 
   const matrix = [];

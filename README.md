@@ -75,16 +75,11 @@ In a second terminal on the Pi:
 npm run display
 ```
 
-If your Pi hostname is not `raspberrypi.local`, pass the URL explicitly:
-
-```bash
-node src/run-matrix.mjs --pi-url http://127.0.0.1:3000
-```
-
 ## What the joystick does
 
 - up/down/left/right: move the white selection square
-- middle press: scroll the selected pair, like `BTC/ETH 0.82`
+- short press middle: scroll the selected pair, like `BTC/ETH 0.82`
+- long press middle (hold ~1 s): cycle the correlation interval — **1 hour → 1 day → 1 week → 1 hour …** — scrolls the new interval name, then fetches and displays fresh data
 
 ## Run modes
 
@@ -140,7 +135,6 @@ If you want to keep presenting from Observable:
 ## Recommended next project improvements
 
 - Add a legend image or printed key next to the Pi so viewers know red vs blue.
-- Add a mode button to switch between 1-hour, 1-day, and 1-week correlations.
 - Cache API responses so the project still works if Coinbase rate-limits you.
 - Add a small auto-rotation mode that highlights interesting pairs when nobody is touching the joystick.
 
