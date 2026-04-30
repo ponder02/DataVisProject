@@ -1,12 +1,12 @@
 # Sense HAT Crypto Correlation Matrix
 
-This project takes your Observable idea and turns it into a full Raspberry Pi workflow:
+This project fetches live crypto data and displays an 8×8 correlation matrix on a Raspberry Pi Sense HAT, all in Node.js — no Python bridge required.
 
 1. JavaScript fetches Coinbase candle data.
 2. It converts prices into hourly log returns.
-3. It computes an 8x8 Pearson correlation matrix for 8 cryptocurrencies.
-4. It sends 64 RGB pixels to the Raspberry Pi.
-5. The Pi shows the matrix on the Sense HAT and uses the joystick to move a white selection cursor.
+3. It computes an 8×8 Pearson correlation matrix for 8 cryptocurrencies.
+4. It writes 64 RGB pixels directly to the Sense HAT LED matrix.
+5. The joystick moves a white selection cursor.
 6. Pressing the joystick scrolls the selected pair and correlation value as text.
 
 ## Why I changed the correlation math
@@ -21,55 +21,34 @@ That gives you a more defensible data visualization project.
 
 ## Project layout
 
-- `src/cryptoMatrix.js`: shared matrix math and color mapping
-- `src/piClient.js`: HTTP client for the Raspberry Pi bridge
-- `src/run-matrix.mjs`: Node app that computes and displays the matrix
-- `pi/sensehat_server.py`: lightweight HTTP bridge running on the Raspberry Pi
+- `src/cryptoMatrix.js`: matrix math and color mapping
+- `src/run-matrix.mjs`: main app — fetches data, drives the LED matrix and joystick
 - `observable-notebook.js`: copy-pasteable Observable cells based on your project
 
 ## Setup on the Raspberry Pi
 
-Use Raspberry Pi OS with the Sense HAT enabled.
+Use Raspberry Pi OS (64-bit) with the Sense HAT enabled.
 
 ### 1. Install system packages
 
 ```bash
 sudo apt update
-sudo apt install -y python3-sense-hat nodejs npm
+sudo apt install -y nodejs npm
 ```
 
-If `python3-sense-hat` complains or the LED matrix does not work, also run:
+### 2. Clone or copy this folder to the Pi
 
 ```bash
-sudo apt install -y sense-hat
-sudo reboot
+/home/pi/rpi-crypto-correlation
 ```
 
-### 2. Copy this folder to the Pi
-
-Copy the `sensehat-crypto-matrix` folder to the Pi, for example into:
+### 3. Install dependencies
 
 ```bash
-/home/pi/sensehat-crypto-matrix
+npm install
 ```
 
-### 3. Start the Sense HAT bridge on the Pi
-
-From the project folder on the Pi:
-
-```bash
-python3 pi/sensehat_server.py
-```
-
-You should see:
-
-```text
-Sense HAT server listening on http://0.0.0.0:3000
-```
-
-### 4. Start the matrix app
-
-In a second terminal on the Pi:
+### 4. Start the app
 
 ```bash
 npm run display
@@ -89,7 +68,7 @@ npm run display
 npm run display:simulate
 ```
 
-This prints the matrix in the terminal without calling the Pi bridge.
+This prints the matrix to the terminal. No hardware is required.
 
 ### Run once
 

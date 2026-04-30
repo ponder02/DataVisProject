@@ -1,3 +1,4 @@
+import { createRequire } from "module";
 import {
   DEFAULT_PRODUCTS,
   WEEK_GRANULARITY,
@@ -6,15 +7,6 @@ import {
   matrixToConsoleTable,
   matrixToPixels
 } from "./cryptoMatrix.js";
-import { getJoystickEvent, postPixels, showMessage } from "./piClient.js";
-
-async function drainJoystickQueue(piUrl) {
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const event = await getJoystickEvent(piUrl);
-    if (event === null) break;
-  }
-}
 
 const GRANULARITY_MODES = [
   { granularity: 3600, label: "1 hour" },
@@ -23,6 +15,8 @@ const GRANULARITY_MODES = [
 ];
 
 const LONG_PRESS_MS = 500;
+const SCROLL_SPEED = 0.05;
+const MESSAGE_COLOR = [100, 200, 255];
 
 function readFlag(name) {
   return process.argv.includes(name);
@@ -34,15 +28,9 @@ function readOption(name, fallback) {
   return process.argv[index + 1];
 }
 
-async function sleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
 async function main() {
-  const piUrl = readOption("--pi-url", process.env.PI_URL ?? "http://127.0.0.1:3000");
   const granularityArg = readOption("--granularity", process.env.GRANULARITY ?? null);
   const refreshMinutes = Number(readOption("--refresh-minutes", process.env.REFRESH_MINUTES ?? 15));
-  const pollMilliseconds = Number(readOption("--poll-ms", process.env.POLL_MS ?? 120));
   const simulate = readFlag("--simulate");
   const once = readFlag("--once");
 
@@ -58,95 +46,107 @@ async function main() {
     granularity: currentMode.granularity
   });
 
-  let selectedIndex = 0;
-  let nextRefreshAt = Date.now() + refreshMinutes * 60_000;
-  let middlePressedAt = null;
-  let dirty = false;
-
   console.table(matrixToConsoleTable(matrix));
   console.log(`Interval: ${currentMode.label}`);
 
   if (simulate) {
-    console.log("Simulation mode enabled. No pixels will be sent to a Raspberry Pi.");
-  } else {
-    await postPixels(piUrl, matrixToPixels(matrix, selectedIndex));
-    await showMessage(piUrl, "Crypto correlation matrix");
-    await showMessage(piUrl, currentMode.label);
-    await drainJoystickQueue(piUrl);
-    await postPixels(piUrl, matrixToPixels(matrix, selectedIndex));
-  }
-
-  if (once) {
+    console.log("Simulation mode: no hardware calls will be made.");
+    if (!once) {
+      setInterval(async () => {
+        matrix = await computeCorrelationMatrix({
+          products: DEFAULT_PRODUCTS,
+          granularity: currentMode.granularity
+        });
+        console.log(`Refreshed at ${new Date().toISOString()} (${currentMode.label})`);
+        console.table(matrixToConsoleTable(matrix));
+      }, refreshMinutes * 60_000);
+    }
     return;
   }
 
-  while (true) {
-    if (Date.now() >= nextRefreshAt) {
-      matrix = await computeCorrelationMatrix({
-        products: DEFAULT_PRODUCTS,
-        granularity: currentMode.granularity
-      });
-      nextRefreshAt = Date.now() + refreshMinutes * 60_000;
+  const require = createRequire(import.meta.url);
+  const sense = require("sense-hat-led").sync;
+  const Joystick = require("./joystick.cjs");
 
-      console.log(`Refreshed matrix at ${new Date().toISOString()} (${currentMode.label})`);
-      console.table(matrixToConsoleTable(matrix));
-      dirty = true;
-    }
+  let selectedIndex = 0;
 
-    if (!simulate) {
-      const event = await getJoystickEvent(piUrl);
-
-      if (event?.direction === "middle") {
-        if (event.action === "pressed") {
-          middlePressedAt = event.timestamp;
-        } else if (event.action === "held" && middlePressedAt !== null) {
-          const elapsed = (event.timestamp - middlePressedAt) * 1000;
-          if (elapsed >= LONG_PRESS_MS) {
-            middlePressedAt = null;
-            modeIndex = (modeIndex + 1) % GRANULARITY_MODES.length;
-            currentMode = GRANULARITY_MODES[modeIndex];
-            console.log(`Switched to interval: ${currentMode.label}`);
-            await showMessage(piUrl, currentMode.label);
-            await drainJoystickQueue(piUrl);
-            matrix = await computeCorrelationMatrix({
-              products: DEFAULT_PRODUCTS,
-              granularity: currentMode.granularity
-            });
-            await drainJoystickQueue(piUrl);
-            nextRefreshAt = Date.now() + refreshMinutes * 60_000;
-            console.table(matrixToConsoleTable(matrix));
-            dirty = true;
-          }
-        } else if (event.action === "released") {
-          if (middlePressedAt !== null) {
-            middlePressedAt = null;
-            await showMessage(piUrl, buildSelectionLabel(matrix, selectedIndex));
-            await drainJoystickQueue(piUrl);
-            dirty = true;
-          }
-          // if middlePressedAt is null, long-press already fired — ignore release
-        }
-      } else if (event && event.action !== "released") {
-        const row = Math.floor(selectedIndex / 8);
-        const column = selectedIndex % 8;
-
-        if (event.direction === "up" && row > 0) { selectedIndex -= 8; dirty = true; }
-        if (event.direction === "down" && row < 7) { selectedIndex += 8; dirty = true; }
-        if (event.direction === "left" && column > 0) { selectedIndex -= 1; dirty = true; }
-        if (event.direction === "right" && column < 7) { selectedIndex += 1; dirty = true; }
-      }
-
-      if (dirty) {
-        await postPixels(piUrl, matrixToPixels(matrix, selectedIndex));
-        dirty = false;
-      }
-    }
-
-    await sleep(pollMilliseconds);
+  function redraw() {
+    sense.setPixels(matrixToPixels(matrix, selectedIndex));
   }
+
+  // Initial display
+  redraw();
+  sense.showMessage("Crypto correlation matrix", SCROLL_SPEED, MESSAGE_COLOR);
+  sense.showMessage(currentMode.label, SCROLL_SPEED, MESSAGE_COLOR);
+  redraw();
+
+  if (once) return;
+
+  // Periodic matrix refresh
+  setInterval(async () => {
+    matrix = await computeCorrelationMatrix({
+      products: DEFAULT_PRODUCTS,
+      granularity: currentMode.granularity
+    });
+    console.log(`Refreshed at ${new Date().toISOString()} (${currentMode.label})`);
+    console.table(matrixToConsoleTable(matrix));
+    redraw();
+  }, refreshMinutes * 60_000);
+
+  const joystick = new Joystick();
+
+  // Directional cursor movement
+  joystick.on("up", () => {
+    if (Math.floor(selectedIndex / 8) > 0) { selectedIndex -= 8; redraw(); }
+  });
+  joystick.on("down", () => {
+    if (Math.floor(selectedIndex / 8) < 7) { selectedIndex += 8; redraw(); }
+  });
+  joystick.on("left", () => {
+    if (selectedIndex % 8 > 0) { selectedIndex -= 1; redraw(); }
+  });
+  joystick.on("right", () => {
+    if (selectedIndex % 8 < 7) { selectedIndex += 1; redraw(); }
+  });
+
+  // Enter: short press (release < 500 ms) = show label
+  //        long press  (no release within 500 ms) = cycle interval, fetch new data
+  let enterPressedAt = null;
+  let longPressTimer = null;
+
+  joystick.on("enter", () => {
+    enterPressedAt = Date.now();
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      enterPressedAt = null;
+
+      modeIndex = (modeIndex + 1) % GRANULARITY_MODES.length;
+      currentMode = GRANULARITY_MODES[modeIndex];
+      console.log(`Switched to interval: ${currentMode.label}`);
+      sense.showMessage(currentMode.label, SCROLL_SPEED, MESSAGE_COLOR);
+
+      computeCorrelationMatrix({ products: DEFAULT_PRODUCTS, granularity: currentMode.granularity })
+        .then((m) => {
+          matrix = m;
+          console.table(matrixToConsoleTable(matrix));
+          redraw();
+        })
+        .catch(console.error);
+    }, LONG_PRESS_MS);
+  });
+
+  joystick.on("enter-release", () => {
+    if (enterPressedAt === null) return; // long press already fired — ignore release
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+    enterPressedAt = null;
+    sense.showMessage(buildSelectionLabel(matrix, selectedIndex), SCROLL_SPEED, MESSAGE_COLOR);
+    redraw();
+  });
 }
 
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+

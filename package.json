@@ -5,7 +5,6 @@
   "type": "module",
   "description": "Display an 8x8 crypto correlation matrix on a Raspberry Pi Sense HAT.",
   "scripts": {
-    "start": "node src/run-matrix.mjs --pi-url http://127.0.0.1:3000",
     "display": "node src/run-matrix.mjs",
     "display:simulate": "node src/run-matrix.mjs --simulate",
     "display:once": "node src/run-matrix.mjs --once"
@@ -16,6 +15,8 @@
   "dependencies": {
     "d3-color": "^3.1.0",
     "d3-scale": "^4.0.2",
-    "d3-scale-chromatic": "^3.1.0"
+    "d3-scale-chromatic": "^3.1.0",
+    "sense-hat-joystick-x64": "^0.2.0",
+    "sense-hat-led": "^1.2.0"
   }
 }
