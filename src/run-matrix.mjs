@@ -8,6 +8,14 @@ import {
 } from "./cryptoMatrix.js";
 import { getJoystickEvent, postPixels, showMessage } from "./piClient.js";
 
+async function drainJoystickQueue(piUrl) {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const event = await getJoystickEvent(piUrl);
+    if (event === null) break;
+  }
+}
+
 const GRANULARITY_MODES = [
   { granularity: 3600, label: "1 hour" },
   { granularity: 86400, label: "1 day" },
@@ -53,6 +61,7 @@ async function main() {
   let selectedIndex = 0;
   let nextRefreshAt = Date.now() + refreshMinutes * 60_000;
   let middlePressedAt = null;
+  let dirty = false;
 
   console.table(matrixToConsoleTable(matrix));
   console.log(`Interval: ${currentMode.label}`);
@@ -61,7 +70,10 @@ async function main() {
     console.log("Simulation mode enabled. No pixels will be sent to a Raspberry Pi.");
   } else {
     await postPixels(piUrl, matrixToPixels(matrix, selectedIndex));
-    await showMessage(piUrl, "Crypto matrix ready");
+    await showMessage(piUrl, "Crypto correlation matrix");
+    await showMessage(piUrl, currentMode.label);
+    await drainJoystickQueue(piUrl);
+    await postPixels(piUrl, matrixToPixels(matrix, selectedIndex));
   }
 
   if (once) {
@@ -78,10 +90,7 @@ async function main() {
 
       console.log(`Refreshed matrix at ${new Date().toISOString()} (${currentMode.label})`);
       console.table(matrixToConsoleTable(matrix));
-
-      if (!simulate) {
-        await postPixels(piUrl, matrixToPixels(matrix, selectedIndex));
-      }
+      dirty = true;
     }
 
     if (!simulate) {
@@ -98,17 +107,22 @@ async function main() {
             currentMode = GRANULARITY_MODES[modeIndex];
             console.log(`Switched to interval: ${currentMode.label}`);
             await showMessage(piUrl, currentMode.label);
+            await drainJoystickQueue(piUrl);
             matrix = await computeCorrelationMatrix({
               products: DEFAULT_PRODUCTS,
               granularity: currentMode.granularity
             });
+            await drainJoystickQueue(piUrl);
             nextRefreshAt = Date.now() + refreshMinutes * 60_000;
             console.table(matrixToConsoleTable(matrix));
+            dirty = true;
           }
         } else if (event.action === "released") {
           if (middlePressedAt !== null) {
             middlePressedAt = null;
             await showMessage(piUrl, buildSelectionLabel(matrix, selectedIndex));
+            await drainJoystickQueue(piUrl);
+            dirty = true;
           }
           // if middlePressedAt is null, long-press already fired — ignore release
         }
@@ -116,13 +130,16 @@ async function main() {
         const row = Math.floor(selectedIndex / 8);
         const column = selectedIndex % 8;
 
-        if (event.direction === "up" && row > 0) selectedIndex -= 8;
-        if (event.direction === "down" && row < 7) selectedIndex += 8;
-        if (event.direction === "left" && column > 0) selectedIndex -= 1;
-        if (event.direction === "right" && column < 7) selectedIndex += 1;
+        if (event.direction === "up" && row > 0) { selectedIndex -= 8; dirty = true; }
+        if (event.direction === "down" && row < 7) { selectedIndex += 8; dirty = true; }
+        if (event.direction === "left" && column > 0) { selectedIndex -= 1; dirty = true; }
+        if (event.direction === "right" && column < 7) { selectedIndex += 1; dirty = true; }
       }
 
-      await postPixels(piUrl, matrixToPixels(matrix, selectedIndex));
+      if (dirty) {
+        await postPixels(piUrl, matrixToPixels(matrix, selectedIndex));
+        dirty = false;
+      }
     }
 
     await sleep(pollMilliseconds);
