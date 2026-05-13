@@ -8,7 +8,7 @@
     "display": "node src/run-matrix.mjs",
     "display:simulate": "node src/run-matrix.mjs --simulate",
     "display:once": "node src/run-matrix.mjs --once",
-    "serve": "pm2 delete crypto-matrix || true && pm2 start ecosystem.config.js"
+    "serve": "pm2 delete crypto-matrix || true && pm2 start ecosystem.config.cjs"
   },
   "engines": {
     "node": ">=18"
